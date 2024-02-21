@@ -3,6 +3,7 @@
 Use `wurlitzer.pipes` or `wurlitzer.sys_pipes` as context managers.
 """
 from __future__ import print_function
+from typing_extensions import Optional
 
 __version__ = '3.0.4.dev'
 
@@ -95,7 +96,7 @@ except ValueError:
 STDOUT = 2
 PIPE = 3
 
-_default_encoding = getattr(sys.stdin, 'encoding', None) or 'utf8'
+_default_encoding: str = getattr(sys.stdin, 'encoding', None) or 'utf8'
 if _default_encoding.lower() == 'ascii':
     # don't respect ascii
     _default_encoding = 'utf8'  # pragma: no cover
@@ -119,7 +120,7 @@ def dup2(a, b, timeout=3):
 
 
 @lru_cache()
-def _get_max_pipe_size():
+def _get_max_pipe_size() -> Optional[int]:
     """Get max pipe size
 
     Reads /proc/sys/fs/pipe-max-size on Linux.
@@ -163,10 +164,10 @@ class Wurlitzer:
 
     def __init__(
         self,
-        stdout=None,
-        stderr=None,
-        encoding=_default_encoding,
-        bufsize=_get_max_pipe_size(),
+        stdout: Optional[io.TextIOWrapper] = None,
+        stderr: Optional[io.TextIOWrapper] = None,
+        encoding: str = _default_encoding,
+        bufsize: Optional[int] = _get_max_pipe_size(),
     ):
         """
         Parameters
@@ -374,7 +375,7 @@ class Wurlitzer:
 
 
 @contextmanager
-def pipes(stdout=PIPE, stderr=PIPE, encoding=_default_encoding, bufsize=None):
+def pipes(stdout: int | io.TextIOWrapper = PIPE, stderr: int | io.TextIOWrapper = PIPE, encoding=_default_encoding, bufsize=None):
     """Capture C-level stdout/stderr in a context manager.
 
     The return value for the context manager is (stdout, stderr).
@@ -428,7 +429,7 @@ def pipes(stdout=PIPE, stderr=PIPE, encoding=_default_encoding, bufsize=None):
             stderr_r.seek(0)
 
 
-def sys_pipes(encoding=_default_encoding, bufsize=None):
+def sys_pipes(encoding: str = _default_encoding, bufsize: Optional[int]= None):
     """Redirect C-level stdout/stderr to sys.stdout/stderr
 
     This is useful of sys.sdout/stderr are already being forwarded somewhere.
