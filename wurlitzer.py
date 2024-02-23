@@ -3,7 +3,11 @@
 Use `wurlitzer.pipes` or `wurlitzer.sys_pipes` as context managers.
 """
 from __future__ import print_function
-from typing_extensions import Optional
+import _typeshed
+import contextlib
+from typing import TYPE_CHECKING, Any, Final, Iterator, Literal, TextIO, Union
+from typing_extensions import Optional, Protocol, TypeAlias, TypeVar
+from _typeshed import SupportsWrite
 
 __version__ = '3.0.4.dev'
 
@@ -31,6 +35,12 @@ from contextlib import contextmanager
 from fcntl import F_GETFL, F_SETFL, fcntl
 from functools import lru_cache
 from queue import Queue
+
+
+_T_contra = TypeVar("_T_contra", contravariant=True)
+class Stream(SupportsWrite[_T_contra], Protocol):
+    ...
+    def seek(self, __offset: int, __whence: int = ...) -> int: ...
 
 try:
     from fcntl import F_GETPIPE_SZ, F_SETPIPE_SZ
@@ -67,8 +77,8 @@ def _get_streams_cffi():
                 ]
             )
         )
-        c_stdout_p = ctypes.c_void_p(_lib.c_stdout_p())
-        c_stderr_p = ctypes.c_void_p(_lib.c_stderr_p())
+        c_stdout_p = ctypes.c_void_p(_lib.c_stdout_p())  # type: ignore
+        c_stderr_p = ctypes.c_void_p(_lib.c_stderr_p())  # type: ignore
     except Exception as e:
         warnings.warn(
             "Failed to lookup stdout with cffi: {}.\nStreams may not be flushed.".format(
@@ -93,8 +103,8 @@ except ValueError:
         c_stdout_p, c_stderr_p = _get_streams_cffi()
 
 
-STDOUT = 2
-PIPE = 3
+STDOUT: Final = 2
+PIPE: Final = 3
 
 _default_encoding: str = getattr(sys.stdin, 'encoding', None) or 'utf8'
 if _default_encoding.lower() == 'ascii':
@@ -102,7 +112,7 @@ if _default_encoding.lower() == 'ascii':
     _default_encoding = 'utf8'  # pragma: no cover
 
 
-def dup2(a, b, timeout=3):
+def dup2(a: int, b: int, timeout: int = 3) -> int:
     """Like os.dup2, but retry on EBUSY"""
     dup_err = None
     # give FDs 3 seconds to not be busy anymore
@@ -164,9 +174,9 @@ class Wurlitzer:
 
     def __init__(
         self,
-        stdout: Optional[io.TextIOWrapper] = None,
-        stderr: Optional[io.TextIOWrapper] = None,
-        encoding: str = _default_encoding,
+        stdout: Optional[Stream] = None,
+        stderr: Union[Literal[2], Optional[Stream]] = None,
+        encoding: Optional[str] = _default_encoding,
         bufsize: Optional[int] = _get_max_pipe_size(),
     ):
         """
@@ -375,7 +385,12 @@ class Wurlitzer:
 
 
 @contextmanager
-def pipes(stdout: int | io.TextIOWrapper = PIPE, stderr: int | io.TextIOWrapper = PIPE, encoding=_default_encoding, bufsize=None):
+def pipes(
+    stdout: Literal[3] | Stream = PIPE,
+    stderr: Literal[2, 3] | Stream = PIPE,
+    encoding: Optional[str] = _default_encoding,
+    bufsize: Optional[int] = None,
+) -> Iterator[tuple[io.BytesIO | io.StringIO | Stream, io.BytesIO | io.StringIO | Stream | None]]:
     """Capture C-level stdout/stderr in a context manager.
 
     The return value for the context manager is (stdout, stderr).
@@ -424,12 +439,15 @@ def pipes(stdout: int | io.TextIOWrapper = PIPE, stderr: int | io.TextIOWrapper 
         if stdout_pipe:
             # seek to 0 so that it can be read after exit
             stdout_r.seek(0)
-        if stderr_pipe:
+        if stderr_pipe and stderr_r is not None:
             # seek to 0 so that it can be read after exit
             stderr_r.seek(0)
 
 
-def sys_pipes(encoding: str = _default_encoding, bufsize: Optional[int]= None):
+def sys_pipes(
+    encoding: str = _default_encoding,
+    bufsize: Optional[int]= None,
+) -> contextlib._GeneratorContextManager[tuple[TextIO | io.BytesIO | io.StringIO, TextIO | io.BytesIO | io.StringIO | None]]:
     """Redirect C-level stdout/stderr to sys.stdout/stderr
 
     This is useful of sys.sdout/stderr are already being forwarded somewhere.
@@ -443,7 +461,7 @@ _mighty_wurlitzer = None
 _mighty_lock = threading.Lock()
 
 
-def sys_pipes_forever(encoding=_default_encoding, bufsize=None):
+def sys_pipes_forever(encoding: str = _default_encoding, bufsize: Optional[int] = None):
     """Redirect all C output to sys.stdout/err
 
     This is not a context manager; it turns on C-forwarding permanently.
@@ -455,7 +473,7 @@ def sys_pipes_forever(encoding=_default_encoding, bufsize=None):
             _mighty_wurlitzer.__enter__()
 
 
-def stop_sys_pipes():
+def stop_sys_pipes() -> None:
     """Stop permanent redirection started by sys_pipes_forever"""
     global _mighty_wurlitzer
     with _mighty_lock:
